@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
 import { Inter } from "next/font/google";
@@ -99,15 +100,19 @@ export default async function RootLayout({
       // children still surface.
       suppressHydrationWarning
     >
-      <head>
-        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
-        <script
+      <body className="min-h-full bg-background text-foreground font-sans">
+        {/*
+         * beforeInteractive scripts are always injected into <head> by Next.js
+         * regardless of where they appear in the component tree (docs: next/script).
+         * Placing it here (inside <body>) is the documented pattern for App Router
+         * and avoids both the React-19 "script in component" warning and the
+         * hydration mismatch caused by writing an explicit <head> in JSX.
+         */}
+        <Script
           id="theme-boot"
-          suppressHydrationWarning
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
         />
-      </head>
-      <body className="min-h-full bg-background text-foreground font-sans">
         <NextIntlClientProvider messages={messages} locale={locale}>
           <ThemeProvider>
             {children}
