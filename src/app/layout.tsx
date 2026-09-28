@@ -104,6 +104,7 @@ export default async function RootLayout({
         <Script
           id="theme-boot"
           strategy="beforeInteractive"
+          suppressHydrationWarning
           dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
         />
       </head>
