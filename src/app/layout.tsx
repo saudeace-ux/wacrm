@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
+import Script from "next/script";
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
 import { Inter } from "next/font/google";
-import Script from "next/script";
 import "./globals.css";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { ThemedToaster } from "@/components/themed-toaster";
@@ -22,8 +22,8 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: {
-    default: "wacrm",
-    template: "%s — wacrm",
+    default: "Kyron - CRM",
+    template: "%s — Kyron - CRM",
   },
   description: "Self-hostable CRM template for WhatsApp.",
   robots: {
@@ -104,7 +104,6 @@ export default async function RootLayout({
         <Script
           id="theme-boot"
           strategy="beforeInteractive"
-          suppressHydrationWarning
           dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
         />
       </head>

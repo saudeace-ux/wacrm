@@ -24,6 +24,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { SettingsPanelHead } from './settings-panel-head';
+import { EvolutionQrConnect } from './evolution-qr-connect';
+import { QrCode, Globe } from 'lucide-react';
 import {
   Accordion,
   AccordionItem,
@@ -98,6 +100,7 @@ export function WhatsAppConfig() {
   // again and overwrites whatever the user typed but hadn't saved yet.
   const loadedAccountIdRef = useRef<string | null>(null);
 
+  const [providerMode, setProviderMode] = useState<'evolution' | 'meta'>('evolution');
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [wabaId, setWabaId] = useState('');
   const [accessToken, setAccessToken] = useState('');
@@ -545,6 +548,34 @@ export function WhatsAppConfig() {
         title={t("title")}
         description={t("description")}
       />
+
+      {/* Provider Selector Tabs */}
+      <div className="flex items-center gap-2 border-b border-border pb-4 mb-6">
+        <Button
+          type="button"
+          variant={providerMode === 'evolution' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setProviderMode('evolution')}
+          className="gap-2"
+        >
+          <QrCode className="h-4 w-4" />
+          Conexão via QR Code (Evolution API)
+        </Button>
+        <Button
+          type="button"
+          variant={providerMode === 'meta' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setProviderMode('meta')}
+          className="gap-2"
+        >
+          <Globe className="h-4 w-4" />
+          Meta Cloud API (Oficial)
+        </Button>
+      </div>
+
+      {providerMode === 'evolution' ? (
+        <EvolutionQrConnect />
+      ) : (
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
       {/* Main config form */}
       <div className="space-y-6">
@@ -1066,8 +1097,9 @@ export function WhatsAppConfig() {
             </div>
           </CardContent>
         </Card>
+        </div>
       </div>
-    </div>
+      )}
     </section>
   );
 }

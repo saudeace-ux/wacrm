@@ -41,6 +41,7 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity';
+import { sendEvolutionText } from '@/lib/whatsapp/evolution-api';
 import type { MessageTemplate } from '@/types';
 import {
   resolveTemplateRow,
@@ -261,10 +262,47 @@ export async function sendMessageToConversation(
     .eq('account_id', accountId)
     .single();
 
+  // If Meta Cloud API config is not present, check if we can send via Evolution API
   if (configError || !config) {
+    if (process.env.EVOLUTION_API_URL && messageType === 'text') {
+      const instanceName = `kyron_${accountId.slice(0, 8)}`;
+      try {
+        const evoRes = await sendEvolutionText(instanceName, sanitizedPhone || sendTarget, contentText!);
+        const evoMessageId = evoRes?.key?.id || `evo_${Date.now()}`;
+        
+        // Persist message locally
+        const { data: inserted, error: insertError } = await db
+          .from('messages')
+          .insert({
+            conversation_id: conversationId,
+            content_text: contentText,
+            message_type: 'text',
+            direction: 'outbound',
+            message_id: evoMessageId,
+            status: 'sent',
+          })
+          .select('id')
+          .single();
+
+        if (!insertError && inserted) {
+          await db
+            .from('conversations')
+            .update({ last_message_at: new Date().toISOString() })
+            .eq('id', conversationId);
+
+          return {
+            messageId: inserted.id,
+            whatsappMessageId: evoMessageId,
+          };
+        }
+      } catch (evoErr) {
+        console.error('[send-message] Evolution API fallback failed:', evoErr);
+      }
+    }
+
     throw new SendMessageError(
       'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
+      'WhatsApp não configurado. Por favor, conecte via QR Code ou Meta Cloud API.',
       400
     );
   }
