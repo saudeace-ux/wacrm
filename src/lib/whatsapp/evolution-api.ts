@@ -46,7 +46,7 @@ export async function createEvolutionInstance(instanceName: string): Promise<boo
     if (res.ok) return true;
     const data = await res.json().catch(() => ({}));
     // If it already exists, that's fine
-    if (res.status === 403 || data?.response?.message?.includes('already in use')) {
+    if (res.status === 403 || data?.response?.message?.includes('already in use') || data?.message?.includes('already in use')) {
       return true;
     }
     console.error('[evolution] Failed to create instance:', data);
@@ -58,26 +58,53 @@ export async function createEvolutionInstance(instanceName: string): Promise<boo
 }
 
 /**
- * Connects to instance and retrieves the QR Code data (base64 string).
+ * Connects to instance and retrieves the QR Code data (base64 string) or Pairing Code.
  */
-export async function getEvolutionQrCode(instanceName: string): Promise<QrCodeResponse | null> {
+export async function getEvolutionQrCode(instanceName: string, phoneNumber?: string): Promise<QrCodeResponse | null> {
   try {
     // Ensure instance is registered
     await createEvolutionInstance(instanceName);
 
-    const res = await fetch(`${EVOLUTION_URL}/instance/connect/${instanceName}`, {
+    let url = `${EVOLUTION_URL}/instance/connect/${instanceName}`;
+    if (phoneNumber) {
+      const cleanPhone = phoneNumber.replace(/\D/g, '');
+      if (cleanPhone) {
+        url += `?number=${cleanPhone}`;
+      }
+    }
+
+    const res = await fetch(url, {
       method: 'GET',
       headers: getHeaders(),
       cache: 'no-store',
     });
 
     if (!res.ok) {
-      console.error('[evolution] Failed to get QR code:', res.status, await res.text());
+      console.error('[evolution] Failed to get QR/pairing code:', res.status, await res.text());
       return null;
     }
 
     const data = await res.json();
-    return data;
+    
+    // Normalize base64 image (ensure data:image/png;base64, prefix)
+    let base64: string | undefined = undefined;
+    const rawBase64 = data?.base64 || data?.qrcode?.base64;
+    if (rawBase64 && typeof rawBase64 === 'string') {
+      if (rawBase64.startsWith('data:image')) {
+        base64 = rawBase64;
+      } else if (rawBase64.length > 100) {
+        base64 = `data:image/png;base64,${rawBase64}`;
+      }
+    }
+
+    const pairingCode = data?.pairingCode || data?.qrcode?.pairingCode || data?.pairing_code || (phoneNumber ? data?.code : undefined);
+
+    return {
+      base64,
+      pairingCode,
+      code: data?.code,
+      count: data?.count,
+    };
   } catch (err) {
     console.error('[evolution] Error fetching QR code:', err);
     return null;

@@ -11,7 +11,7 @@
  */
 
 /** App-wide fallback when no account/deal currency is available. */
-export const DEFAULT_CURRENCY = "USD";
+export const DEFAULT_CURRENCY = "BRL";
 
 export interface CurrencyOption {
   /** ISO-4217 code, e.g. "USD". Stored verbatim in the DB. */
@@ -28,13 +28,13 @@ export interface CurrencyOption {
  * list to offer more — nothing else needs to change.
  */
 export const CURRENCIES: CurrencyOption[] = [
+  { code: "BRL", label: "Real Brasileiro", symbol: "R$" },
   { code: "USD", label: "US Dollar", symbol: "$" },
   { code: "EUR", label: "Euro", symbol: "€" },
   { code: "GBP", label: "British Pound", symbol: "£" },
   { code: "INR", label: "Indian Rupee", symbol: "₹" },
   { code: "AUD", label: "Australian Dollar", symbol: "A$" },
   { code: "CAD", label: "Canadian Dollar", symbol: "C$" },
-  { code: "BRL", label: "Brazilian Real", symbol: "R$" },
   { code: "JPY", label: "Japanese Yen", symbol: "¥" },
   { code: "CNY", label: "Chinese Yuan", symbol: "¥" },
   { code: "AED", label: "UAE Dirham", symbol: "د.إ" },
@@ -48,7 +48,7 @@ export const CURRENCIES: CurrencyOption[] = [
 /**
  * Format a deal value as a currency string. Whole-number output
  * (no minor units) — deal values are tracked to the dollar across
- * the app. `currency` defaults to USD so callers with nothing better
+ * the app. `currency` defaults to BRL so callers with nothing better
  * stay safe, but pass the account/deal currency wherever known.
  *
  * Total by design: `Intl.NumberFormat` throws a RangeError on a
@@ -64,8 +64,10 @@ export function formatCurrency(
 ): string {
   const code = (currency || DEFAULT_CURRENCY).trim();
   const amount = Number(value) || 0;
+  const appLocale = process.env.NEXT_PUBLIC_APP_LOCALE || 'pt';
+  const localeStr = appLocale.startsWith('pt') ? 'pt-BR' : appLocale;
   try {
-    return new Intl.NumberFormat(undefined, {
+    return new Intl.NumberFormat(localeStr, {
       style: "currency",
       currency: code,
       minimumFractionDigits: 0,
@@ -74,7 +76,7 @@ export function formatCurrency(
   } catch {
     // Invalid ISO code — show the raw code + grouped number so the
     // value is still legible instead of throwing.
-    return `${code} ${new Intl.NumberFormat(undefined, {
+    return `${code} ${new Intl.NumberFormat(localeStr, {
       maximumFractionDigits: 0,
     }).format(amount)}`;
   }

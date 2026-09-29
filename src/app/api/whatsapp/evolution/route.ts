@@ -18,6 +18,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action');
+  const phoneNumber = searchParams.get('number') || undefined;
   
   // Use accountId or a standardized instance name per tenant/user
   const instanceName = searchParams.get('instance') || `kyron_${user.id.slice(0, 8)}`;
@@ -31,8 +32,8 @@ export async function GET(request: Request) {
     });
   }
 
-  // Default: generate or fetch QR code
-  const qrData = await getEvolutionQrCode(instanceName);
+  // Default: generate or fetch QR code / Pairing code
+  const qrData = await getEvolutionQrCode(instanceName, phoneNumber);
   const state = await getEvolutionConnectionState(instanceName);
 
   return NextResponse.json({
