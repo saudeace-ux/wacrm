@@ -34,7 +34,7 @@ export interface QrCodeResponse {
  */
 export async function configureEvolutionWebhook(instanceName: string): Promise<boolean> {
   try {
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://wacrm-rho.vercel.app';
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://kyroncrm.vercel.app';
     const webhookUrl = `${siteUrl.replace(/\/$/, '')}/api/whatsapp/evolution/webhook`;
 
     const res = await fetch(`${EVOLUTION_URL}/webhook/set/${instanceName}`, {
