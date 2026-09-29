@@ -24,8 +24,9 @@ export async function POST(request: Request) {
     if (eventName === 'MESSAGES_UPSERT' || eventName === 'MESSAGES.UPSERT') {
       const db = supabaseAdmin();
 
-      // Attempt to resolve account_id from instance name (e.g., kyron_7c02cce4 -> user_id starts with 7c02cce4)
+      // Resolve account_id and user_id from instance name (e.g. kyron_7c02cce4 -> user_id starts with 7c02cce4)
       let resolvedAccountId: string | null = null;
+      let resolvedUserId: string | null = null;
       const instanceHash = instanceName.replace(/^kyron_/, '');
 
       if (instanceHash) {
@@ -38,12 +39,19 @@ export async function POST(request: Request) {
         );
         if (matchedProfile) {
           resolvedAccountId = matchedProfile.account_id;
+          resolvedUserId = matchedProfile.user_id;
         }
       }
 
-      if (!resolvedAccountId) {
-        const { data: accounts } = await db.from('accounts').select('id').limit(1);
-        resolvedAccountId = accounts?.[0]?.id || null;
+      if (!resolvedAccountId || !resolvedUserId) {
+        const { data: fallbackProfile } = await db
+          .from('profiles')
+          .select('account_id, user_id')
+          .limit(1)
+          .maybeSingle();
+
+        resolvedAccountId = fallbackProfile?.account_id || null;
+        resolvedUserId = fallbackProfile?.user_id || null;
       }
 
       for (const data of dataList) {
@@ -51,12 +59,13 @@ export async function POST(request: Request) {
         const isFromMe = key?.fromMe ?? false;
         const remoteJid = key?.remoteJid || '';
         
-        // Skip group messages if desired or handle jids
+        // Skip group messages
         if (remoteJid.endsWith('@g.us')) {
           continue;
         }
 
-        const phone = remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+        const cleanPhone = remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+        const phoneWithPlus = `+${cleanPhone}`;
         const messageId = key?.id;
 
         // Extract message text content across various message types
@@ -72,7 +81,7 @@ export async function POST(request: Request) {
           (data.message?.contactMessage ? '[Contato]' : '') ||
           (data.message?.locationMessage ? '[Localização]' : '');
 
-        if (!phone || !messageContent) {
+        if (!cleanPhone || !messageContent) {
           continue;
         }
 
@@ -81,22 +90,25 @@ export async function POST(request: Request) {
         const { data: existingContact } = await db
           .from('contacts')
           .select('id, account_id')
-          .eq('phone', phone)
+          .or(`phone.eq.${cleanPhone},phone.eq.${phoneWithPlus},phone_normalized.eq.${cleanPhone}`)
           .maybeSingle();
+
+        const contactName = data.pushName || `WhatsApp ${cleanPhone.slice(-4)}`;
 
         if (existingContact) {
           contactId = existingContact.id;
-        } else if (resolvedAccountId) {
-          const pushName = data.pushName || `WhatsApp ${phone.slice(-4)}`;
+        } else if (resolvedAccountId && resolvedUserId) {
           const { data: newContact } = await db
             .from('contacts')
             .insert({
-              phone,
-              name: pushName,
+              phone: phoneWithPlus,
+              phone_normalized: cleanPhone,
+              name: contactName,
               account_id: resolvedAccountId,
+              user_id: resolvedUserId,
             })
             .select('id')
-            .single();
+            .maybeSingle();
           contactId = newContact?.id || null;
         }
 
@@ -115,28 +127,21 @@ export async function POST(request: Request) {
         if (existingConv) {
           conversationId = existingConv.id;
           unreadCount = existingConv.unread_count || 0;
-        } else {
-          const { data: contactRow } = await db
-            .from('contacts')
-            .select('account_id')
-            .eq('id', contactId)
-            .single();
-
-          if (contactRow) {
-            const { data: newConv } = await db
-              .from('conversations')
-              .insert({
-                contact_id: contactId,
-                account_id: contactRow.account_id,
-                status: 'open',
-                last_message_at: new Date().toISOString(),
-                last_message_text: messageContent,
-                unread_count: isFromMe ? 0 : 1,
-              })
-              .select('id')
-              .single();
-            conversationId = newConv?.id || null;
-          }
+        } else if (resolvedAccountId && resolvedUserId) {
+          const { data: newConv } = await db
+            .from('conversations')
+            .insert({
+              account_id: resolvedAccountId,
+              user_id: resolvedUserId,
+              contact_id: contactId,
+              status: 'open',
+              last_message_at: new Date().toISOString(),
+              last_message_text: messageContent,
+              unread_count: isFromMe ? 0 : 1,
+            })
+            .select('id')
+            .maybeSingle();
+          conversationId = newConv?.id || null;
         }
 
         if (!conversationId) continue;
@@ -154,9 +159,9 @@ export async function POST(request: Request) {
 
         await db.from('messages').insert({
           conversation_id: conversationId,
+          sender_type: isFromMe ? 'agent' : 'customer',
+          content_type: 'text',
           content_text: messageContent,
-          message_type: 'text',
-          direction: isFromMe ? 'outbound' : 'inbound',
           message_id: messageId || `evo_${Date.now()}`,
           status: isFromMe ? 'sent' : 'delivered',
           created_at: new Date().toISOString(),
@@ -171,6 +176,48 @@ export async function POST(request: Request) {
             unread_count: isFromMe ? 0 : unreadCount + 1,
           })
           .eq('id', conversationId);
+
+        // 5. Ensure a Deal exists in the Pipeline for this contact
+        if (resolvedAccountId && resolvedUserId) {
+          const { data: existingDeal } = await db
+            .from('deals')
+            .select('id')
+            .eq('contact_id', contactId)
+            .maybeSingle();
+
+          if (!existingDeal) {
+            // Find first stage of the account's pipeline
+            const { data: pipeline } = await db
+              .from('pipelines')
+              .select('id')
+              .eq('account_id', resolvedAccountId)
+              .limit(1)
+              .maybeSingle();
+
+            if (pipeline) {
+              const { data: stage } = await db
+                .from('pipeline_stages')
+                .select('id')
+                .eq('pipeline_id', pipeline.id)
+                .order('position', { ascending: true })
+                .limit(1)
+                .maybeSingle();
+
+              if (stage) {
+                await db.from('deals').insert({
+                  account_id: resolvedAccountId,
+                  user_id: resolvedUserId,
+                  contact_id: contactId,
+                  conversation_id: conversationId,
+                  pipeline_id: pipeline.id,
+                  stage_id: stage.id,
+                  title: contactName,
+                  status: 'open',
+                });
+              }
+            }
+          }
+        }
       }
 
       return NextResponse.json({ success: true });
@@ -182,4 +229,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
-
