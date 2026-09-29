@@ -93,13 +93,14 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <head>
+        <meta name="google" content="notranslate" />
         <script
           id="theme-boot"
           dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
           suppressHydrationWarning
         />
       </head>
-      <body className="min-h-full bg-background text-foreground font-sans">
+      <body className="min-h-full bg-background text-foreground font-sans" suppressHydrationWarning>
         <NextIntlClientProvider messages={messages} locale={locale}>
           <ThemeProvider>
             {children}
