@@ -88,7 +88,11 @@ export function EvolutionQrConnect() {
         }
 
         if (!data.qrCode && !data.pairingCode) {
-          setErrorMsg('A Evolution API na VPS não retornou o código. Verifique se o container docker na VPS está rodando.');
+          // Use the structured error from the backend when available;
+          // fall back to a generic message only as last resort.
+          const detail = data.vpsError
+            || 'A Evolution API na VPS não retornou o código. Verifique se o container docker na VPS está rodando.';
+          setErrorMsg(detail);
           toast.info('Aguardando resposta da Evolution API...');
         } else {
           toast.success(connectMethod === 'qr' ? 'QR Code gerado com sucesso!' : 'Código de pareamento gerado!');

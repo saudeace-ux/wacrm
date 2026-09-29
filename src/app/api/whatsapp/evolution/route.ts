@@ -42,6 +42,9 @@ export async function GET(request: Request) {
     state: state?.state || 'close',
     qrCode: qrData?.base64 || null,
     pairingCode: qrData?.pairingCode || null,
+    // Propagate structured error from the Evolution API client so the
+    // frontend can display a precise message instead of a generic one.
+    vpsError: qrData?.error || null,
   });
 }
 

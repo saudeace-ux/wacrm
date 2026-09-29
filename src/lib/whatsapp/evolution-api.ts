@@ -4,7 +4,7 @@
  */
 
 const EVOLUTION_URL = process.env.EVOLUTION_API_URL || 'http://129.121.45.5:8080';
-const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || 'kyron_crm_secret_key_123456';
+const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || '';
 
 type EvolutionHeaders = Record<string, string>;
 
@@ -25,6 +25,8 @@ export interface QrCodeResponse {
   code?: string;
   base64?: string;
   count?: number;
+  /** Non-null when the Evolution API call failed — carries a user-facing message. */
+  error?: string;
 }
 
 /**
@@ -63,7 +65,10 @@ export async function createEvolutionInstance(instanceName: string): Promise<boo
 export async function getEvolutionQrCode(instanceName: string, phoneNumber?: string): Promise<QrCodeResponse | null> {
   try {
     // Ensure instance is registered
-    await createEvolutionInstance(instanceName);
+    const created = await createEvolutionInstance(instanceName);
+    if (!created) {
+      return { error: 'Não foi possível criar/validar a instância na Evolution API. Verifique se a API key está correta.' };
+    }
 
     let url = `${EVOLUTION_URL}/instance/connect/${instanceName}`;
     if (phoneNumber) {
@@ -80,8 +85,15 @@ export async function getEvolutionQrCode(instanceName: string, phoneNumber?: str
     });
 
     if (!res.ok) {
-      console.error('[evolution] Failed to get QR/pairing code:', res.status, await res.text());
-      return null;
+      const errorBody = await res.text().catch(() => '');
+      console.error('[evolution] Failed to get QR/pairing code:', res.status, errorBody);
+      if (res.status === 401 || res.status === 403) {
+        return { error: `Autenticação falhou (HTTP ${res.status}). Verifique se a EVOLUTION_API_KEY está correta.` };
+      }
+      if (res.status === 404) {
+        return { error: `Instância "${instanceName}" não encontrada (HTTP 404). A instância pode ter sido removida da Evolution API.` };
+      }
+      return { error: `Evolution API retornou erro HTTP ${res.status}. Verifique os logs do container.` };
     }
 
     const data = await res.json();
@@ -107,7 +119,7 @@ export async function getEvolutionQrCode(instanceName: string, phoneNumber?: str
     };
   } catch (err) {
     console.error('[evolution] Error fetching QR code:', err);
-    return null;
+    return { error: 'Erro de rede ao contactar a Evolution API na VPS. Verifique se o container está rodando.' };
   }
 }
 
