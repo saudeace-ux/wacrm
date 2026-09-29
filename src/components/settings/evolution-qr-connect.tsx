@@ -188,15 +188,15 @@ export function EvolutionQrConnect() {
                     className="w-full sm:w-auto"
                   >
                     {loading ? (
-                      <>
+                      <span key="loading-state" className="inline-flex items-center" suppressHydrationWarning>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Gerando QR Code...
-                      </>
+                        <span suppressHydrationWarning>Gerando QR Code...</span>
+                      </span>
                     ) : (
-                      <>
+                      <span key="idle-state" className="inline-flex items-center" suppressHydrationWarning>
                         <QrCode className="h-4 w-4 mr-2" />
-                        {qrCode ? 'Atualizar QR Code' : 'Gerar QR Code'}
-                      </>
+                        <span suppressHydrationWarning>{qrCode ? 'Atualizar QR Code' : 'Gerar QR Code'}</span>
+                      </span>
                     )}
                   </Button>
                 </div>
@@ -214,14 +214,15 @@ export function EvolutionQrConnect() {
                 ) : (
                   <div className="h-56 w-56 flex flex-col items-center justify-center border border-dashed border-slate-300 rounded-lg text-slate-400 p-4 text-center">
                     <QrCode className="h-12 w-12 mb-2 stroke-[1.5]" />
-                    <span className="text-xs">
+                    <span className="text-xs" suppressHydrationWarning>
                       Clique em &quot;Gerar QR Code&quot; para exibir
                     </span>
                   </div>
                 )}
                 {qrCode && (
-                  <span className="text-xs text-slate-500 mt-2 flex items-center gap-1">
-                    <Loader2 className="h-3 w-3 animate-spin" /> Aguardando leitura do celular...
+                  <span className="text-xs text-slate-500 mt-2 flex items-center gap-1" suppressHydrationWarning>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span suppressHydrationWarning>Aguardando leitura do celular...</span>
                   </span>
                 )}
               </div>

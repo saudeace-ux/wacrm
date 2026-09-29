@@ -598,15 +598,15 @@ export function WhatsAppConfig() {
                   className="mt-3 bg-amber-600 hover:bg-amber-700 text-white"
                 >
                   {resetting ? (
-                    <>
+                    <span key="resetting-state" className="inline-flex items-center gap-2" suppressHydrationWarning>
                       <Loader2 className="size-4 animate-spin" />
-                      {t('resetting')}
-                    </>
+                      <span suppressHydrationWarning>{t('resetting')}</span>
+                    </span>
                   ) : (
-                    <>
+                    <span key="idle-state" className="inline-flex items-center gap-2" suppressHydrationWarning>
                       <RotateCcw className="size-4" />
-                      {t('resetConfig')}
-                    </>
+                      <span suppressHydrationWarning>{t('resetConfig')}</span>
+                    </span>
                   )}
                 </Button>
               </div>
