@@ -30,6 +30,35 @@ export interface QrCodeResponse {
 }
 
 /**
+ * Configures the webhook URL for the instance in Evolution API.
+ */
+export async function configureEvolutionWebhook(instanceName: string): Promise<boolean> {
+  try {
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://wacrm-rho.vercel.app';
+    const webhookUrl = `${siteUrl.replace(/\/$/, '')}/api/whatsapp/evolution/webhook`;
+
+    const res = await fetch(`${EVOLUTION_URL}/webhook/set/${instanceName}`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        webhook: {
+          enabled: true,
+          url: webhookUrl,
+          byEvents: false,
+          base64: false,
+          events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE'],
+        },
+      }),
+    });
+
+    return res.ok;
+  } catch (err) {
+    console.error('[evolution] Error configuring webhook:', err);
+    return false;
+  }
+}
+
+/**
  * Creates an instance if it doesn't already exist.
  */
 export async function createEvolutionInstance(instanceName: string): Promise<boolean> {
@@ -44,6 +73,9 @@ export async function createEvolutionInstance(instanceName: string): Promise<boo
         integration: 'WHATSAPP-BAILEYS',
       }),
     });
+
+    // Automatically ensure webhook is configured
+    void configureEvolutionWebhook(instanceName);
 
     if (res.ok) return true;
     const data = await res.json().catch(() => ({}));

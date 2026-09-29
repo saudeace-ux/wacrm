@@ -206,7 +206,26 @@ function InboxPageInner() {
         .eq("account_id", accountId)
         .maybeSingle();
 
-      setWhatsappConnected(data?.status === "connected");
+      if (data?.status === "connected") {
+        setWhatsappConnected(true);
+        return;
+      }
+
+      // Check Evolution API connection state
+      try {
+        const evoRes = await fetch("/api/whatsapp/evolution?action=status");
+        if (evoRes.ok) {
+          const evoData = await evoRes.json();
+          if (evoData.connected) {
+            setWhatsappConnected(true);
+            return;
+          }
+        }
+      } catch {
+        // Fallback silent
+      }
+
+      setWhatsappConnected(false);
     };
 
     checkConnection();

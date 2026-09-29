@@ -262,10 +262,18 @@ export async function sendMessageToConversation(
     .eq('account_id', accountId)
     .single();
 
-  // If Meta Cloud API config is not present, check if we can send via Evolution API
-  if (configError || !config) {
+  // If Meta Cloud API config is not present or not connected, check if we can send via Evolution API
+  if (configError || !config || config.status !== 'connected') {
     if (process.env.EVOLUTION_API_URL && messageType === 'text') {
-      const instanceName = `kyron_${accountId.slice(0, 8)}`;
+      const { data: profile } = await db
+        .from('profiles')
+        .select('user_id')
+        .eq('account_id', accountId)
+        .limit(1)
+        .maybeSingle();
+
+      const userHash = profile?.user_id ? profile.user_id.slice(0, 8) : accountId.slice(0, 8);
+      const instanceName = `kyron_${userHash}`;
       try {
         const evoRes = await sendEvolutionText(instanceName, sanitizedPhone || sendTarget, contentText!);
         const evoMessageId = evoRes?.key?.id || `evo_${Date.now()}`;
@@ -287,7 +295,10 @@ export async function sendMessageToConversation(
         if (!insertError && inserted) {
           await db
             .from('conversations')
-            .update({ last_message_at: new Date().toISOString() })
+            .update({
+              last_message_at: new Date().toISOString(),
+              last_message_text: contentText,
+            })
             .eq('id', conversationId);
 
           return {

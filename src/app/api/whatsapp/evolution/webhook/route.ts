@@ -3,135 +3,177 @@ import { supabaseAdmin } from '@/lib/flows/admin-client';
 
 /**
  * Webhook endpoint for Evolution API events:
- *   - MESSAGES_UPSERT: Incoming messages from WhatsApp contacts
+ *   - MESSAGES_UPSERT: Incoming/Outgoing messages from WhatsApp
  *   - MESSAGES_UPDATE: Status updates (DELIVERY_ACK, READ, etc.)
  */
 export async function POST(request: Request) {
   try {
     const payload = await request.json();
-    const event = payload.event;
-    const data = payload.data;
+    const eventName = String(payload.event || '').toUpperCase();
+    const instanceName = String(payload.instance || '');
+    const rawData = payload.data;
 
-    if (!data) {
+    if (!rawData) {
       return NextResponse.json({ ok: true, ignored: 'no data' });
     }
 
+    // Evolution API can send data as a single object or an array
+    const dataList = Array.isArray(rawData) ? rawData : [rawData];
+
     // Handle Incoming / Outgoing messages
-    if (event === 'messages.upsert') {
-      const key = data.key;
-      const isFromMe = key?.fromMe ?? false;
-      const remoteJid = key?.remoteJid || '';
-      const phone = remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '');
-      const messageId = key?.id;
+    if (eventName === 'MESSAGES_UPSERT' || eventName === 'MESSAGES.UPSERT') {
+      const db = supabaseAdmin();
 
-      // Extract message text content
-      const messageContent =
-        data.message?.conversation ||
-        data.message?.extendedTextMessage?.text ||
-        data.message?.imageMessage?.caption ||
-        data.message?.videoMessage?.caption ||
-        (data.message?.imageMessage ? '[Imagem]' : '') ||
-        (data.message?.audioMessage ? '[Áudio]' : '') ||
-        (data.message?.documentMessage ? '[Documento]' : '');
+      // Attempt to resolve account_id from instance name (e.g., kyron_7c02cce4 -> user_id starts with 7c02cce4)
+      let resolvedAccountId: string | null = null;
+      const instanceHash = instanceName.replace(/^kyron_/, '');
 
-      if (!phone || !messageContent) {
-        return NextResponse.json({ ok: true, ignored: 'no content or phone' });
+      if (instanceHash) {
+        const { data: profiles } = await db
+          .from('profiles')
+          .select('account_id, user_id');
+
+        const matchedProfile = profiles?.find(
+          (p) => p.user_id && p.user_id.replace(/-/g, '').startsWith(instanceHash)
+        );
+        if (matchedProfile) {
+          resolvedAccountId = matchedProfile.account_id;
+        }
       }
 
-      // 1. Find or create contact
-      const db = supabaseAdmin();
-      let contactId: string | null = null;
-      const { data: existingContact } = await db
-        .from('contacts')
-        .select('id, account_id')
-        .eq('phone', phone)
-        .maybeSingle();
+      if (!resolvedAccountId) {
+        const { data: accounts } = await db.from('accounts').select('id').limit(1);
+        resolvedAccountId = accounts?.[0]?.id || null;
+      }
 
-      if (existingContact) {
-        contactId = existingContact.id;
-      } else {
-        // Fallback: pick the first account or one associated with instance
-        const { data: accounts } = await db
-          .from('accounts')
-          .select('id')
-          .limit(1);
-        const accountId = accounts?.[0]?.id;
+      for (const data of dataList) {
+        const key = data.key;
+        const isFromMe = key?.fromMe ?? false;
+        const remoteJid = key?.remoteJid || '';
+        
+        // Skip group messages if desired or handle jids
+        if (remoteJid.endsWith('@g.us')) {
+          continue;
+        }
 
-        if (accountId) {
+        const phone = remoteJid.replace('@s.whatsapp.net', '').replace(/\D/g, '');
+        const messageId = key?.id;
+
+        // Extract message text content across various message types
+        const messageContent =
+          data.message?.conversation ||
+          data.message?.extendedTextMessage?.text ||
+          data.message?.imageMessage?.caption ||
+          data.message?.videoMessage?.caption ||
+          (data.message?.imageMessage ? '[Imagem]' : '') ||
+          (data.message?.audioMessage ? '[Áudio]' : '') ||
+          (data.message?.documentMessage ? '[Documento]' : '') ||
+          (data.message?.stickerMessage ? '[Sticker]' : '') ||
+          (data.message?.contactMessage ? '[Contato]' : '') ||
+          (data.message?.locationMessage ? '[Localização]' : '');
+
+        if (!phone || !messageContent) {
+          continue;
+        }
+
+        // 1. Find or create contact
+        let contactId: string | null = null;
+        const { data: existingContact } = await db
+          .from('contacts')
+          .select('id, account_id')
+          .eq('phone', phone)
+          .maybeSingle();
+
+        if (existingContact) {
+          contactId = existingContact.id;
+        } else if (resolvedAccountId) {
           const pushName = data.pushName || `WhatsApp ${phone.slice(-4)}`;
           const { data: newContact } = await db
             .from('contacts')
             .insert({
               phone,
               name: pushName,
-              account_id: accountId,
+              account_id: resolvedAccountId,
             })
             .select('id')
             .single();
           contactId = newContact?.id || null;
         }
-      }
 
-      if (!contactId) {
-        return NextResponse.json({ ok: true, warning: 'contact not resolved' });
-      }
+        if (!contactId) continue;
 
-      // 2. Find or create conversation
-      let conversationId: string | null = null;
-      const { data: existingConv } = await db
-        .from('conversations')
-        .select('id, account_id')
-        .eq('contact_id', contactId)
-        .maybeSingle();
+        // 2. Find or create conversation
+        let conversationId: string | null = null;
+        let unreadCount = 0;
 
-      if (existingConv) {
-        conversationId = existingConv.id;
-      } else {
-        const { data: contactRow } = await db
-          .from('contacts')
-          .select('account_id')
-          .eq('id', contactId)
-          .single();
+        const { data: existingConv } = await db
+          .from('conversations')
+          .select('id, account_id, unread_count')
+          .eq('contact_id', contactId)
+          .maybeSingle();
 
-        if (contactRow) {
-          const { data: newConv } = await db
-            .from('conversations')
-            .insert({
-              contact_id: contactId,
-              account_id: contactRow.account_id,
-              status: 'open',
-              last_message_at: new Date().toISOString(),
-            })
-            .select('id')
+        if (existingConv) {
+          conversationId = existingConv.id;
+          unreadCount = existingConv.unread_count || 0;
+        } else {
+          const { data: contactRow } = await db
+            .from('contacts')
+            .select('account_id')
+            .eq('id', contactId)
             .single();
-          conversationId = newConv?.id || null;
+
+          if (contactRow) {
+            const { data: newConv } = await db
+              .from('conversations')
+              .insert({
+                contact_id: contactId,
+                account_id: contactRow.account_id,
+                status: 'open',
+                last_message_at: new Date().toISOString(),
+                last_message_text: messageContent,
+                unread_count: isFromMe ? 0 : 1,
+              })
+              .select('id')
+              .single();
+            conversationId = newConv?.id || null;
+          }
         }
+
+        if (!conversationId) continue;
+
+        // 3. Deduplicate message insertion
+        if (messageId) {
+          const { data: existingMsg } = await db
+            .from('messages')
+            .select('id')
+            .eq('message_id', messageId)
+            .maybeSingle();
+
+          if (existingMsg) continue;
+        }
+
+        await db.from('messages').insert({
+          conversation_id: conversationId,
+          content_text: messageContent,
+          message_type: 'text',
+          direction: isFromMe ? 'outbound' : 'inbound',
+          message_id: messageId || `evo_${Date.now()}`,
+          status: isFromMe ? 'sent' : 'delivered',
+          created_at: new Date().toISOString(),
+        });
+
+        // 4. Touch conversation timestamp, last message text & unread count
+        await db
+          .from('conversations')
+          .update({
+            last_message_at: new Date().toISOString(),
+            last_message_text: messageContent,
+            unread_count: isFromMe ? 0 : unreadCount + 1,
+          })
+          .eq('id', conversationId);
       }
 
-      if (!conversationId) {
-        return NextResponse.json({ ok: true, warning: 'conversation not resolved' });
-      }
-
-      // 3. Insert the message
-      await db.from('messages').insert({
-        conversation_id: conversationId,
-        content_text: messageContent,
-        message_type: 'text',
-        direction: isFromMe ? 'outbound' : 'inbound',
-        message_id: messageId,
-        status: isFromMe ? 'sent' : 'delivered',
-        created_at: new Date().toISOString(),
-      });
-
-      // 4. Touch conversation timestamp & snippet
-      await db
-        .from('conversations')
-        .update({
-          last_message_at: new Date().toISOString(),
-        })
-        .eq('id', conversationId);
-
-      return NextResponse.json({ success: true, conversationId });
+      return NextResponse.json({ success: true });
     }
 
     return NextResponse.json({ ok: true });
@@ -140,3 +182,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
+
