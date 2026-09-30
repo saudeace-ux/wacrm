@@ -41,7 +41,11 @@ import {
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity';
-import { sendEvolutionText } from '@/lib/whatsapp/evolution-api';
+import {
+  sendEvolutionText,
+  sendEvolutionMedia,
+  sendEvolutionWhatsAppAudio,
+} from '@/lib/whatsapp/evolution-api';
 import type { MessageTemplate } from '@/types';
 import {
   resolveTemplateRow,
@@ -264,7 +268,7 @@ export async function sendMessageToConversation(
 
   // If Meta Cloud API config is not present or not connected, check if we can send via Evolution API
   if (configError || !config || config.status !== 'connected') {
-    if (process.env.EVOLUTION_API_URL && messageType === 'text') {
+    if (process.env.EVOLUTION_API_URL && (messageType === 'text' || isMediaKind)) {
       const { data: profile } = await db
         .from('profiles')
         .select('user_id')
@@ -272,33 +276,78 @@ export async function sendMessageToConversation(
         .limit(1)
         .maybeSingle();
 
-
       const userHash = profile?.user_id ? profile.user_id.slice(0, 8) : accountId.slice(0, 8);
       const instanceName = `kyron_${userHash}`;
+      const targetPhone = sanitizedPhone || sendTarget;
+
       try {
-        const evoRes = await sendEvolutionText(instanceName, sanitizedPhone || sendTarget, contentText!);
+        let evoRes: any = null;
+        if (messageType === 'text') {
+          evoRes = await sendEvolutionText(instanceName, targetPhone, contentText!);
+        } else if (messageType === 'audio') {
+          try {
+            evoRes = await sendEvolutionWhatsAppAudio(instanceName, targetPhone, mediaUrl!);
+          } catch {
+            evoRes = await sendEvolutionMedia(instanceName, targetPhone, {
+              mediatype: 'audio',
+              media: mediaUrl!,
+              fileName: filename || 'audio.mp3',
+            });
+          }
+        } else {
+          evoRes = await sendEvolutionMedia(instanceName, targetPhone, {
+            mediatype: messageType as 'image' | 'video' | 'document',
+            media: mediaUrl!,
+            caption: contentText || undefined,
+            fileName: filename || undefined,
+          });
+        }
+
         const evoMessageId = evoRes?.key?.id || `evo_${Date.now()}`;
         
-        // Persist message locally
+        // Persist message locally using valid DB column names
         const { data: inserted, error: insertError } = await db
           .from('messages')
           .insert({
             conversation_id: conversationId,
-            content_text: contentText,
-            message_type: 'text',
-            direction: 'outbound',
+            sender_type: 'agent',
+            content_type: messageType,
+            content_text: contentText || (messageType === 'text' ? '' : null),
+            media_url: mediaUrl || null,
             message_id: evoMessageId,
             status: 'sent',
+            reply_to_message_id: replyToMessageId || null,
           })
-          .select('id')
+          .select()
           .single();
 
-        if (!insertError && inserted) {
+        if (insertError) {
+          console.error('[send-message] Error inserting sent Evolution message:', insertError);
+          throw new SendMessageError(
+            'db_error',
+            `Mensagem enviada via WhatsApp mas falhou ao salvar: ${insertError.message}`,
+            500
+          );
+        }
+
+        if (inserted) {
+          const lastMessageText =
+            contentText ||
+            (messageType === 'image'
+              ? '[Imagem]'
+              : messageType === 'audio'
+              ? '[Áudio]'
+              : messageType === 'video'
+              ? '[Vídeo]'
+              : messageType === 'document'
+              ? '[Documento]'
+              : `[${messageType}]`);
+
           await db
             .from('conversations')
             .update({
               last_message_at: new Date().toISOString(),
-              last_message_text: contentText,
+              last_message_text: lastMessageText,
             })
             .eq('id', conversationId);
 
@@ -307,8 +356,16 @@ export async function sendMessageToConversation(
             whatsappMessageId: evoMessageId,
           };
         }
-      } catch (evoErr) {
+      } catch (evoErr: any) {
         console.error('[send-message] Evolution API fallback failed:', evoErr);
+        if (evoErr instanceof SendMessageError) {
+          throw evoErr;
+        }
+        throw new SendMessageError(
+          'evolution_send_failed',
+          evoErr?.message || 'Falha ao enviar mensagem via Evolution API.',
+          500
+        );
       }
     }
 

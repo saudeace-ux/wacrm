@@ -45,8 +45,13 @@ export async function configureEvolutionWebhook(instanceName: string): Promise<b
           enabled: true,
           url: webhookUrl,
           byEvents: false,
-          base64: false,
-          events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'CONNECTION_UPDATE'],
+          base64: true,
+          events: [
+            'MESSAGES_UPSERT',
+            'MESSAGES_UPDATE',
+            'CONNECTION_UPDATE',
+            'SEND_MESSAGE',
+          ],
         },
       }),
     });
@@ -214,3 +219,94 @@ export async function sendEvolutionText(instanceName: string, number: string, te
 
   return res.json();
 }
+
+/**
+ * Sends media (image, video, audio, document) via Evolution API.
+ */
+export async function sendEvolutionMedia(
+  instanceName: string,
+  number: string,
+  options: {
+    mediatype: 'image' | 'video' | 'audio' | 'document';
+    media: string; // URL or base64
+    caption?: string | null;
+    fileName?: string | null;
+    mimetype?: string | null;
+  }
+) {
+  const cleanNumber = number.replace(/\D/g, '');
+  const body: Record<string, unknown> = {
+    number: cleanNumber,
+    mediatype: options.mediatype,
+    media: options.media,
+  };
+  if (options.caption) body.caption = options.caption;
+  if (options.fileName) body.fileName = options.fileName;
+  if (options.mimetype) body.mimetype = options.mimetype;
+
+  const res = await fetch(`${EVOLUTION_URL}/message/sendMedia/${instanceName}`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errData = await res.text();
+    throw new Error(`Evolution API sendMedia failed (${res.status}): ${errData}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Sends WhatsApp audio (PTT voice note) via Evolution API.
+ */
+export async function sendEvolutionWhatsAppAudio(
+  instanceName: string,
+  number: string,
+  audioUrlOrBase64: string
+) {
+  const cleanNumber = number.replace(/\D/g, '');
+  const res = await fetch(`${EVOLUTION_URL}/message/sendWhatsAppAudio/${instanceName}`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({
+      number: cleanNumber,
+      audio: audioUrlOrBase64,
+    }),
+  });
+
+  if (!res.ok) {
+    const errData = await res.text();
+    throw new Error(`Evolution API sendWhatsAppAudio failed (${res.status}): ${errData}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Fetches base64 for a media message from Evolution API.
+ */
+export async function getEvolutionMediaBase64(
+  instanceName: string,
+  messageData: unknown
+): Promise<string | null> {
+  try {
+    const res = await fetch(`${EVOLUTION_URL}/chat/getBase64FromMediaMessage/${instanceName}`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        message: messageData,
+        convertToMp4: false,
+      }),
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.base64 || null;
+  } catch (err) {
+    console.error('[evolution] Error getting media base64:', err);
+    return null;
+  }
+}
+

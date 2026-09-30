@@ -245,11 +245,34 @@ function InboxPageInner() {
           setMessages((prev) => {
             // Avoid duplicates
             if (prev.some((m) => m.id === newMsg.id)) return prev;
-            // Replace optimistic message if it exists
-            const withoutOptimistic = prev.filter(
-              (m) => !m.id.startsWith("temp-")
-            );
-            return [...withoutOptimistic, newMsg];
+            
+            // Try to replace matching optimistic message
+            let replaced = false;
+            const updated = prev.map((m) => {
+              if (
+                !replaced &&
+                m.id.startsWith("temp-") &&
+                m.sender_type === newMsg.sender_type &&
+                ((m.content_text && m.content_text === newMsg.content_text) ||
+                  (m.media_url && m.media_url === newMsg.media_url) ||
+                  m.content_type === newMsg.content_type)
+              ) {
+                replaced = true;
+                return newMsg;
+              }
+              return m;
+            });
+            if (replaced) return updated;
+
+            // If agent message, clear any temp messages and append
+            if (newMsg.sender_type === "agent") {
+              const withoutOptimistic = prev.filter(
+                (m) => !m.id.startsWith("temp-")
+              );
+              return [...withoutOptimistic, newMsg];
+            }
+
+            return [...prev, newMsg];
           });
         }
 

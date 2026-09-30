@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
+import { getEvolutionMediaBase64 } from '@/lib/whatsapp/evolution-api';
 
 /**
  * Webhook endpoint for Evolution API events:
@@ -68,22 +69,143 @@ export async function POST(request: Request) {
         const phoneWithPlus = `+${cleanPhone}`;
         const messageId = key?.id;
 
-        // Extract message text content across various message types
-        const messageContent =
-          data.message?.conversation ||
-          data.message?.extendedTextMessage?.text ||
-          data.message?.imageMessage?.caption ||
-          data.message?.videoMessage?.caption ||
-          (data.message?.imageMessage ? '[Imagem]' : '') ||
-          (data.message?.audioMessage ? '[Áudio]' : '') ||
-          (data.message?.documentMessage ? '[Documento]' : '') ||
-          (data.message?.stickerMessage ? '[Sticker]' : '') ||
-          (data.message?.contactMessage ? '[Contato]' : '') ||
-          (data.message?.locationMessage ? '[Localização]' : '');
-
-        if (!cleanPhone || !messageContent) {
+        if (!cleanPhone) {
           continue;
         }
+
+        // Detect media types and content
+        let contentType: 'text' | 'image' | 'video' | 'audio' | 'document' = 'text';
+        let mediaUrl: string | null = null;
+        let textContent: string | null = null;
+
+        const imgMsg = data.message?.imageMessage;
+        const audMsg = data.message?.audioMessage;
+        const vidMsg = data.message?.videoMessage;
+        const docMsg = data.message?.documentMessage;
+        const stkMsg = data.message?.stickerMessage;
+
+        if (imgMsg || stkMsg) {
+          contentType = 'image';
+          textContent = imgMsg?.caption || null;
+        } else if (audMsg) {
+          contentType = 'audio';
+          textContent = null;
+        } else if (vidMsg) {
+          contentType = 'video';
+          textContent = vidMsg?.caption || null;
+        } else if (docMsg) {
+          contentType = 'document';
+          textContent = docMsg?.caption || docMsg?.fileName || docMsg?.title || null;
+        } else {
+          contentType = 'text';
+          textContent =
+            data.message?.conversation ||
+            data.message?.extendedTextMessage?.text ||
+            data.message?.contactMessage?.displayName ||
+            data.message?.locationMessage?.name ||
+            '';
+        }
+
+        // If it's a media message, retrieve the base64 media and upload to storage
+        if (contentType !== 'text') {
+          let base64String: string | null =
+            data.base64 ||
+            data.message?.base64 ||
+            imgMsg?.base64 ||
+            audMsg?.base64 ||
+            vidMsg?.base64 ||
+            docMsg?.base64 ||
+            stkMsg?.base64 ||
+            null;
+
+          if (!base64String && instanceName) {
+            base64String = await getEvolutionMediaBase64(instanceName, data);
+          }
+
+          if (base64String && resolvedAccountId) {
+            try {
+              const rawBase64 = base64String.replace(/^data:[^;]+;base64,/, '');
+              const detectedMime =
+                (base64String.match(/^data:([^;]+);base64,/)?.[1]) ||
+                imgMsg?.mimetype ||
+                audMsg?.mimetype ||
+                vidMsg?.mimetype ||
+                docMsg?.mimetype ||
+                stkMsg?.mimetype ||
+                (contentType === 'image'
+                  ? 'image/jpeg'
+                  : contentType === 'audio'
+                  ? 'audio/ogg'
+                  : contentType === 'video'
+                  ? 'video/mp4'
+                  : 'application/octet-stream');
+
+              const ext =
+                detectedMime.includes('jpeg') || detectedMime.includes('jpg')
+                  ? 'jpg'
+                  : detectedMime.includes('png')
+                  ? 'png'
+                  : detectedMime.includes('webp')
+                  ? 'webp'
+                  : detectedMime.includes('ogg')
+                  ? 'ogg'
+                  : detectedMime.includes('mp4')
+                  ? 'mp4'
+                  : detectedMime.includes('pdf')
+                  ? 'pdf'
+                  : 'bin';
+
+              const buffer = Buffer.from(rawBase64, 'base64');
+              const storagePath = `account-${resolvedAccountId}/inbound/${messageId || Date.now()}.${ext}`;
+
+              const { error: uploadErr } = await db.storage
+                .from('chat-media')
+                .upload(storagePath, buffer, {
+                  contentType: detectedMime,
+                  cacheControl: '31536000, immutable',
+                  upsert: true,
+                });
+
+              if (!uploadErr) {
+                const { data: publicData } = db.storage
+                  .from('chat-media')
+                  .getPublicUrl(storagePath);
+                mediaUrl = publicData?.publicUrl || null;
+              } else {
+                console.warn('[evolution-webhook] Storage upload warning:', uploadErr.message);
+                mediaUrl = `data:${detectedMime};base64,${rawBase64}`;
+              }
+            } catch (mediaErr) {
+              console.error('[evolution-webhook] Error processing media base64:', mediaErr);
+              if (base64String) {
+                mediaUrl = base64String.startsWith('data:')
+                  ? base64String
+                  : `data:image/jpeg;base64,${base64String}`;
+              }
+            }
+          } else if (base64String) {
+            mediaUrl = base64String.startsWith('data:')
+              ? base64String
+              : `data:image/jpeg;base64,${base64String}`;
+          }
+        }
+
+        // If it's a plain text message and has no text content at all, skip
+        if (contentType === 'text' && !textContent) {
+          continue;
+        }
+
+        const previewText =
+          textContent ||
+          (contentType === 'image'
+            ? '[Imagem]'
+            : contentType === 'audio'
+            ? '[Áudio]'
+            : contentType === 'video'
+            ? '[Vídeo]'
+            : contentType === 'document'
+            ? '[Documento]'
+            : '');
 
         // 1. Find or create contact
         let contactId: string | null = null;
@@ -102,7 +224,6 @@ export async function POST(request: Request) {
             .from('contacts')
             .insert({
               phone: phoneWithPlus,
-              // phone_normalized is a generated column — do NOT insert it manually
               name: contactName,
               account_id: resolvedAccountId,
               user_id: resolvedUserId,
@@ -139,7 +260,7 @@ export async function POST(request: Request) {
               contact_id: contactId,
               status: 'open',
               last_message_at: new Date().toISOString(),
-              last_message_text: messageContent,
+              last_message_text: previewText,
               unread_count: isFromMe ? 0 : 1,
             })
             .select('id')
@@ -153,18 +274,28 @@ export async function POST(request: Request) {
         if (messageId) {
           const { data: existingMsg } = await db
             .from('messages')
-            .select('id')
+            .select('id, media_url')
             .eq('message_id', messageId)
             .maybeSingle();
 
-          if (existingMsg) continue;
+          if (existingMsg) {
+            // If message exists but didn't have media_url, update it
+            if (!existingMsg.media_url && mediaUrl) {
+              await db
+                .from('messages')
+                .update({ media_url: mediaUrl, content_type: contentType })
+                .eq('id', existingMsg.id);
+            }
+            continue;
+          }
         }
 
         await db.from('messages').insert({
           conversation_id: conversationId,
           sender_type: isFromMe ? 'agent' : 'customer',
-          content_type: 'text',
-          content_text: messageContent,
+          content_type: contentType,
+          content_text: textContent,
+          media_url: mediaUrl,
           message_id: messageId || `evo_${Date.now()}`,
           status: isFromMe ? 'sent' : 'delivered',
           created_at: new Date().toISOString(),
@@ -175,7 +306,7 @@ export async function POST(request: Request) {
           .from('conversations')
           .update({
             last_message_at: new Date().toISOString(),
-            last_message_text: messageContent,
+            last_message_text: previewText,
             unread_count: isFromMe ? 0 : unreadCount + 1,
           })
           .eq('id', conversationId);
