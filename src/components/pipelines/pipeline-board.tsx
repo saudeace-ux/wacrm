@@ -143,45 +143,6 @@ export function PipelineBoard({
           </div>
         ) : null}
       </DragOverlay>
-
-      <style jsx>{`
-        .pipeline-scroll {
-          scroll-behavior: smooth;
-        }
-        /* On touch devices the peek/snap layout already signals there's
-           more to swipe, so the scrollbar is hidden for a clean look.
-           On desktop (mouse) the board can overflow with many stages
-           and there is no peek hint, so keep a thin, themed scrollbar
-           visible to make the overflow discoverable and usable. */
-        @media (hover: none), (pointer: coarse) {
-          .pipeline-scroll::-webkit-scrollbar {
-            height: 0;
-            display: none;
-          }
-          .pipeline-scroll {
-            scrollbar-width: none;
-          }
-        }
-        @media (hover: hover) and (pointer: fine) {
-          .pipeline-scroll {
-            scrollbar-width: thin;
-            scrollbar-color: var(--border) transparent;
-          }
-          .pipeline-scroll::-webkit-scrollbar {
-            height: 8px;
-          }
-          .pipeline-scroll::-webkit-scrollbar-track {
-            background: transparent;
-          }
-          .pipeline-scroll::-webkit-scrollbar-thumb {
-            background-color: var(--border);
-            border-radius: 9999px;
-          }
-          .pipeline-scroll::-webkit-scrollbar-thumb:hover {
-            background-color: var(--muted-foreground);
-          }
-        }
-      `}</style>
     </DndContext>
   );
 }
