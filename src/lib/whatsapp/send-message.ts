@@ -272,6 +272,7 @@ export async function sendMessageToConversation(
         .limit(1)
         .maybeSingle();
 
+
       const userHash = profile?.user_id ? profile.user_id.slice(0, 8) : accountId.slice(0, 8);
       const instanceName = `kyron_${userHash}`;
       try {

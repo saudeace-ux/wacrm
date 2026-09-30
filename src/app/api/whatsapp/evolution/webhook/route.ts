@@ -98,17 +98,20 @@ export async function POST(request: Request) {
         if (existingContact) {
           contactId = existingContact.id;
         } else if (resolvedAccountId && resolvedUserId) {
-          const { data: newContact } = await db
+          const { data: newContact, error: contactInsertErr } = await db
             .from('contacts')
             .insert({
               phone: phoneWithPlus,
-              phone_normalized: cleanPhone,
+              // phone_normalized is a generated column — do NOT insert it manually
               name: contactName,
               account_id: resolvedAccountId,
               user_id: resolvedUserId,
             })
             .select('id')
             .maybeSingle();
+          if (contactInsertErr) {
+            console.error('[evolution-webhook] Failed to create contact:', contactInsertErr.message);
+          }
           contactId = newContact?.id || null;
         }
 
