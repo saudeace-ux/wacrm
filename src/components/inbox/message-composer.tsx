@@ -118,6 +118,7 @@ interface MessageComposerProps {
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
+  onDraftChange?: (hasDraft: boolean) => void;
 }
 
 function formatDuration(seconds: number): string {
@@ -140,6 +141,7 @@ export function MessageComposer({
   onOpenTemplates,
   replyTo,
   onClearReply,
+  onDraftChange,
 }: MessageComposerProps) {
   const t = useTranslations("Inbox.composer");
 
@@ -147,6 +149,11 @@ export function MessageComposer({
   const [sending, setSending] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Notify parent whenever draft text or media attachment presence changes
+  useEffect(() => {
+    onDraftChange?.(text.trim().length > 0);
+  }, [text, onDraftChange]);
 
   // Interactive-message builder dialog + quick-reply picker.
   const [interactiveOpen, setInteractiveOpen] = useState(false);

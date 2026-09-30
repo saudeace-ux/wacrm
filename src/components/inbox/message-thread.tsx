@@ -106,6 +106,7 @@ interface MessageThreadProps {
    */
   contactPanelOpen?: boolean;
   onToggleContactPanel?: () => void;
+  onDraftChange?: (conversationId: string, hasDraft: boolean) => void;
 }
 
 function formatDateSeparator(dateStr: string, t: ReturnType<typeof useTranslations>): string {
@@ -164,6 +165,7 @@ export function MessageThread({
   onRefresh,
   contactPanelOpen,
   onToggleContactPanel,
+  onDraftChange,
 }: MessageThreadProps) {
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
@@ -1178,6 +1180,7 @@ export function MessageThread({
 
       {/* Composer */}
       <MessageComposer
+        key={conversation.id}
         conversationId={conversation.id}
         sessionExpired={sessionInfo.expired}
         onSend={handleSend}
@@ -1186,6 +1189,7 @@ export function MessageThread({
         onOpenTemplates={handleOpenTemplates}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
+        onDraftChange={(hasDraft) => onDraftChange?.(conversation.id, hasDraft)}
       />
 
       <TemplatePicker

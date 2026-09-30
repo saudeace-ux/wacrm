@@ -69,6 +69,18 @@ function InboxPageInner() {
    * below reconciles to the stored value right after mount instead.
    */
   const [contactPanelOpen, setContactPanelOpen] = useState(true);
+  const [drafts, setDrafts] = useState<Record<string, boolean>>({});
+
+  const handleDraftChange = useCallback(
+    (conversationId: string, hasDraft: boolean) => {
+      setDrafts((prev) => {
+        if (prev[conversationId] === hasDraft) return prev;
+        return { ...prev, [conversationId]: hasDraft };
+      });
+    },
+    []
+  );
+
   useEffect(() => {
     try {
       const stored = localStorage.getItem(CONTACT_PANEL_STORAGE_KEY);
@@ -632,6 +644,7 @@ function InboxPageInner() {
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
+            drafts={drafts}
           />
         </div>
 
@@ -665,6 +678,7 @@ function InboxPageInner() {
             onRefresh={handleManualRefresh}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
+            onDraftChange={handleDraftChange}
           />
         </div>
 

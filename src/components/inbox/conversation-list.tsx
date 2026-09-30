@@ -34,6 +34,7 @@ interface ConversationListProps {
    * or the tab was throttled. Optional so existing callers keep working.
    */
   resyncToken?: number;
+  drafts?: Record<string, boolean>;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -52,6 +53,7 @@ export function ConversationList({
   conversations,
   onConversationsLoaded,
   resyncToken = 0,
+  drafts = {},
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
   
@@ -412,6 +414,7 @@ export function ConversationList({
                 key={conv.id}
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
+                hasDraft={!!drafts[conv.id]}
                 onSelect={handleSelect}
                 t={t}
               />
@@ -426,6 +429,7 @@ export function ConversationList({
 interface ConversationItemProps {
   conversation: Conversation;
   isActive: boolean;
+  hasDraft?: boolean;
   onSelect: (conversation: Conversation) => void;
   t: ReturnType<typeof useTranslations>;
 }
@@ -433,6 +437,7 @@ interface ConversationItemProps {
 function ConversationItem({
   conversation,
   isActive,
+  hasDraft = false,
   onSelect,
   t,
 }: ConversationItemProps) {
@@ -449,6 +454,21 @@ function ConversationItem({
         addSuffix: false,
       })
     : "";
+
+  // Dynamic indicator dot logic:
+  // 1. Começou a escrever e não enviou: amarela
+  // 2. Cliente mandou mensagem e não abriu (não lida): verde
+  // 3. Usuário abriu a mensagem (lida): cinza
+  let dotColor = "bg-muted-foreground";
+  let dotTitle = "Lida";
+
+  if (hasDraft) {
+    dotColor = "bg-amber-400";
+    dotTitle = "Rascunho não enviado";
+  } else if (conversation.unread_count > 0) {
+    dotColor = "bg-emerald-500";
+    dotTitle = "Mensagem não lida";
+  }
 
   return (
     <button
@@ -492,9 +512,9 @@ function ConversationItem({
             <span
               className={cn(
                 "h-2 w-2 rounded-full",
-                STATUS_COLORS[conversation.status]
+                dotColor
               )}
-              title={conversation.status}
+              title={dotTitle}
             />
           </div>
         </div>
