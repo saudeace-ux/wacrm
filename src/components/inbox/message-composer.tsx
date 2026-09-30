@@ -118,7 +118,8 @@ interface MessageComposerProps {
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
-  onDraftChange?: (hasDraft: boolean) => void;
+  initialDraftText?: string;
+  onDraftTextChange?: (text: string) => void;
 }
 
 function formatDuration(seconds: number): string {
@@ -141,19 +142,32 @@ export function MessageComposer({
   onOpenTemplates,
   replyTo,
   onClearReply,
-  onDraftChange,
+  initialDraftText = "",
+  onDraftTextChange,
 }: MessageComposerProps) {
   const t = useTranslations("Inbox.composer");
 
-  const [text, setText] = useState("");
+  const [text, setText] = useState(initialDraftText);
   const [sending, setSending] = useState(false);
   const [drafting, setDrafting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Notify parent whenever draft text or media attachment presence changes
+  // Notify parent whenever draft text changes
   useEffect(() => {
-    onDraftChange?.(text.trim().length > 0);
-  }, [text, onDraftChange]);
+    onDraftTextChange?.(text);
+  }, [text, onDraftTextChange]);
+
+  // Adjust height on initial render if there's pre-filled draft text
+  useEffect(() => {
+    if (text) {
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.style.height = "auto";
+        el.style.height = `${Math.min(el.scrollHeight, 96)}px`;
+      });
+    }
+  }, []);
 
   // Interactive-message builder dialog + quick-reply picker.
   const [interactiveOpen, setInteractiveOpen] = useState(false);

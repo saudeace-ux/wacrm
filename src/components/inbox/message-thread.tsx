@@ -106,7 +106,8 @@ interface MessageThreadProps {
    */
   contactPanelOpen?: boolean;
   onToggleContactPanel?: () => void;
-  onDraftChange?: (conversationId: string, hasDraft: boolean) => void;
+  initialDraftText?: string;
+  onDraftTextChange?: (conversationId: string, text: string) => void;
 }
 
 function formatDateSeparator(dateStr: string, t: ReturnType<typeof useTranslations>): string {
@@ -165,7 +166,8 @@ export function MessageThread({
   onRefresh,
   contactPanelOpen,
   onToggleContactPanel,
-  onDraftChange,
+  initialDraftText,
+  onDraftTextChange,
 }: MessageThreadProps) {
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
@@ -1189,7 +1191,8 @@ export function MessageThread({
         onOpenTemplates={handleOpenTemplates}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
-        onDraftChange={(hasDraft) => onDraftChange?.(conversation.id, hasDraft)}
+        initialDraftText={initialDraftText}
+        onDraftTextChange={(draftText) => onDraftTextChange?.(conversation.id, draftText)}
       />
 
       <TemplatePicker

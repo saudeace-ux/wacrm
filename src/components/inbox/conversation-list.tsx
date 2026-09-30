@@ -34,7 +34,7 @@ interface ConversationListProps {
    * or the tab was throttled. Optional so existing callers keep working.
    */
   resyncToken?: number;
-  drafts?: Record<string, boolean>;
+  drafts?: Record<string, string>;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -414,7 +414,7 @@ export function ConversationList({
                 key={conv.id}
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
-                hasDraft={!!drafts[conv.id]}
+                hasDraft={!!drafts[conv.id]?.trim()}
                 onSelect={handleSelect}
                 t={t}
               />

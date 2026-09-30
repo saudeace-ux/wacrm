@@ -69,13 +69,18 @@ function InboxPageInner() {
    * below reconciles to the stored value right after mount instead.
    */
   const [contactPanelOpen, setContactPanelOpen] = useState(true);
-  const [drafts, setDrafts] = useState<Record<string, boolean>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
 
-  const handleDraftChange = useCallback(
-    (conversationId: string, hasDraft: boolean) => {
+  const handleDraftTextChange = useCallback(
+    (conversationId: string, draftText: string) => {
       setDrafts((prev) => {
-        if (prev[conversationId] === hasDraft) return prev;
-        return { ...prev, [conversationId]: hasDraft };
+        if ((prev[conversationId] || "") === draftText) return prev;
+        if (!draftText) {
+          const next = { ...prev };
+          delete next[conversationId];
+          return next;
+        }
+        return { ...prev, [conversationId]: draftText };
       });
     },
     []
@@ -678,7 +683,8 @@ function InboxPageInner() {
             onRefresh={handleManualRefresh}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
-            onDraftChange={handleDraftChange}
+            initialDraftText={activeConversation ? drafts[activeConversation.id] || "" : ""}
+            onDraftTextChange={handleDraftTextChange}
           />
         </div>
 
